@@ -8,13 +8,7 @@ import datetime # Thư viện xử lý thời gian
 import os
 import glob
 
-@st.cache_resource(experimental_allow_widgets=True)
-def get_cookie_manager():
-    """
-    Tạo và trả về một đối tượng CookieManager.
-    Sử dụng cache để đảm bảo chỉ có một instance được tạo ra.
-    """
-    return stx.CookieManager()
+# ĐÃ XÓA: Hàm get_cookie_manager() đã bị loại bỏ để khắc phục lỗi CachedWidgetWarning.
 
 def rfile(name_file):
     """Hàm đọc nội dung từ file một cách an toàn."""
@@ -25,12 +19,13 @@ def rfile(name_file):
         return ""
 
 # --- Đăng nhập bằng pass, tích hợp ghi nhớ bằng cookie ---
-def check_password():
+def check_password(cookie_manager):
     """
     Kiểm tra mật khẩu. Hàm này sẽ:
     1. Kiểm tra cookie xác thực trước.
     2. Nếu không có cookie, hiển thị form đăng nhập.
     3. Thiết lập cookie sau khi đăng nhập thành công.
+    Hàm này nhận cookie_manager làm đối số thay vì tự tạo.
     """
     password = rfile("password.txt")
     if not password:
@@ -38,8 +33,6 @@ def check_password():
         st.info("Vui lòng tạo file `password.txt` và nhập mật khẩu vào đó để tiếp tục.")
         st.stop()
         
-    cookie_manager = get_cookie_manager()
-
     # 1. Kiểm tra cookie trước
     if 'is_authenticated' not in st.session_state:
         auth_cookie = cookie_manager.get(cookie="auth_status")
@@ -218,10 +211,12 @@ def main():
     """Hàm chính chạy ứng dụng."""
     st.set_page_config(page_title="Trợ lý AI", page_icon="🤖", layout="wide")
     
-    check_password()
-    
-    cookie_manager = get_cookie_manager()
+    # SỬA LỖI: Khởi tạo cookie manager ở đây, một lần duy nhất cho mỗi lần chạy script.
+    cookie_manager = stx.CookieManager()
 
+    # SỬA LỖI: Truyền cookie_manager vào hàm check_password.
+    check_password(cookie_manager)
+    
     with st.sidebar:
         st.title("⚙️ Tùy chọn")
         if st.button("🗑️ Xóa cuộc trò chuyện", key="clear_chat_button"):
@@ -233,7 +228,8 @@ def main():
         # Thêm nút Đăng xuất để xóa cookie
         if st.button("🔒 Đăng xuất", key="logout_button"):
             cookie_manager.delete("auth_status")
-            del st.session_state.is_authenticated
+            if 'is_authenticated' in st.session_state:
+                del st.session_state.is_authenticated
             st.rerun()
 
         st.divider()

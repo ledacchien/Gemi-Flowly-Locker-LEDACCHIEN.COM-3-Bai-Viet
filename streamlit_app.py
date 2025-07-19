@@ -13,6 +13,30 @@ def rfile(name_file):
     except Exception:
         return ""
 
+# --- Thêm hàm kiểm tra password ---
+def check_password():
+    password = rfile("password.txt")
+    if not password:
+        st.error("Chưa thiết lập file password.txt hoặc file trống.")
+        st.stop()
+    # Nếu đã đăng nhập thì không hỏi lại nữa
+    if 'is_authenticated' in st.session_state and st.session_state.is_authenticated:
+        return True
+    # Hiển thị form nhập pass
+    with st.form("login_form"):
+        input_pass = st.text_input("Nhập mật khẩu để đăng nhập:", type="password")
+        submitted = st.form_submit_button("Đăng nhập")
+        if submitted:
+            if input_pass == password:
+                st.session_state.is_authenticated = True
+                st.success("Đăng nhập thành công!")
+                st.experimental_rerun()
+            else:
+                st.error("Sai mật khẩu, thử lại!")
+                st.stop()
+        else:
+            st.stop()
+
 def load_config_data(config_file, default_data):
     try:
         with open(config_file, "r", encoding="utf-8") as file:
@@ -143,6 +167,7 @@ def show_article_page(article_number):
         st.error(f"Lỗi: Không tìm thấy file bài viết số {article_number}.")
 
 def main():
+    check_password()   # --- Thêm dòng này để yêu cầu đăng nhập trước khi vào app ---
     st.set_page_config(page_title="Trợ lý AI", page_icon="🤖", layout="wide")
     with st.sidebar:
         st.title("⚙️ Tùy chọn")

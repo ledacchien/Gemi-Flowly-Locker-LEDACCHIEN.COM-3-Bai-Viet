@@ -3,8 +3,18 @@ from streamlit.components.v1 import html
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from streamlit.errors import StreamlitAPIException, StreamlitSecretNotFoundError
+import extra_streamlit_components as stx # Thư viện quản lý cookies
+import datetime # Thư viện xử lý thời gian
 import os
 import glob
+
+@st.cache_resource(experimental_allow_widgets=True)
+def get_cookie_manager():
+    """
+    Tạo và trả về một đối tượng CookieManager.
+    Sử dụng cache để đảm bảo chỉ có một instance được tạo ra.
+    """
+    return stx.CookieManager()
 
 def rfile(name_file):
     """Hàm đọc nội dung từ file một cách an toàn."""
@@ -14,24 +24,35 @@ def rfile(name_file):
     except Exception:
         return ""
 
-# --- Đăng nhập bằng pass, đã sửa lỗi và tối ưu ---
+# --- Đăng nhập bằng pass, tích hợp ghi nhớ bằng cookie ---
 def check_password():
     """
-    Kiểm tra xem người dùng đã đăng nhập chưa.
-    Nếu chưa, hiển thị biểu mẫu đăng nhập.
-    Hàm này sẽ chặn thực thi phần còn lại của ứng dụng cho đến khi đăng nhập thành công.
+    Kiểm tra mật khẩu. Hàm này sẽ:
+    1. Kiểm tra cookie xác thực trước.
+    2. Nếu không có cookie, hiển thị form đăng nhập.
+    3. Thiết lập cookie sau khi đăng nhập thành công.
     """
     password = rfile("password.txt")
     if not password:
         st.error("Lỗi: File `password.txt` chưa được thiết lập hoặc đang trống.")
         st.info("Vui lòng tạo file `password.txt` và nhập mật khẩu vào đó để tiếp tục.")
         st.stop()
+        
+    cookie_manager = get_cookie_manager()
 
-    # Nếu người dùng đã được xác thực trong session, cho phép truy cập.
-    if st.session_state.get("is_authenticated", False):
+    # 1. Kiểm tra cookie trước
+    if 'is_authenticated' not in st.session_state:
+        auth_cookie = cookie_manager.get(cookie="auth_status")
+        if auth_cookie == "authenticated":
+            st.session_state.is_authenticated = True
+        else:
+            st.session_state.is_authenticated = False
+
+    # Nếu đã xác thực (qua cookie hoặc đăng nhập trước đó), cho phép truy cập
+    if st.session_state.is_authenticated:
         return True
 
-    # Hiển thị biểu mẫu đăng nhập.
+    # Nếu chưa xác thực, hiển thị form đăng nhập
     with st.form("login_form"):
         st.title("🔐 Đăng nhập")
         st.markdown("Vui lòng nhập mật khẩu để truy cập ứng dụng.")
@@ -41,14 +62,18 @@ def check_password():
         if submitted:
             if input_pass == password:
                 st.session_state.is_authenticated = True
-                # Tải lại ứng dụng để hiển thị nội dung chính sau khi đăng nhập thành công.
+                # 3. Thiết lập cookie để ghi nhớ đăng nhập trong 7 ngày
+                cookie_manager.set(
+                    "auth_status", 
+                    "authenticated", 
+                    expires_at=datetime.datetime.now() + datetime.timedelta(days=7)
+                )
                 st.rerun()
             else:
                 st.error("Mật khẩu không chính xác. Vui lòng thử lại.")
     
-    # Nếu đến đây, có nghĩa là người dùng chưa được xác thực và biểu mẫu đã được hiển thị.
-    # Dừng thực thi để không hiển thị phần còn lại của ứng dụng.
     st.stop()
+
 
 def load_config_data(config_file, default_data):
     """Tải dữ liệu cấu hình từ file, sử dụng giá trị mặc định nếu file không tồn tại hoặc thiếu dòng."""
@@ -191,20 +216,26 @@ def show_article_page(article_number):
 
 def main():
     """Hàm chính chạy ứng dụng."""
-    # st.set_page_config phải là lệnh Streamlit đầu tiên được gọi.
     st.set_page_config(page_title="Trợ lý AI", page_icon="🤖", layout="wide")
     
-    # Yêu cầu đăng nhập bằng mật khẩu trước khi vào ứng dụng.
     check_password()
     
+    cookie_manager = get_cookie_manager()
+
     with st.sidebar:
         st.title("⚙️ Tùy chọn")
-        # SỬA LỖI: Thêm một `key` duy nhất cho nút để tránh lỗi DuplicateWidgetID
         if st.button("🗑️ Xóa cuộc trò chuyện", key="clear_chat_button"):
             if "chat" in st.session_state: del st.session_state.chat
             if "messages" in st.session_state: del st.session_state.messages
             st.session_state.view = "main"
             st.rerun()
+        
+        # Thêm nút Đăng xuất để xóa cookie
+        if st.button("🔒 Đăng xuất", key="logout_button"):
+            cookie_manager.delete("auth_status")
+            del st.session_state.is_authenticated
+            st.rerun()
+
         st.divider()
         st.markdown("Một sản phẩm của [Lê Đắc Chiến](https://ledacchien.com)")
 

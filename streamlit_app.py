@@ -7,36 +7,51 @@ import os
 import glob
 
 def rfile(name_file):
+    """Hàm đọc nội dung từ file một cách an toàn."""
     try:
         with open(name_file, "r", encoding="utf-8") as file:
             return file.read().strip()
     except Exception:
         return ""
 
-# --- Đăng nhập bằng pass, reload tự động ---
+# --- Đăng nhập bằng pass, đã sửa lỗi và tối ưu ---
 def check_password():
+    """
+    Kiểm tra xem người dùng đã đăng nhập chưa.
+    Nếu chưa, hiển thị biểu mẫu đăng nhập.
+    Hàm này sẽ chặn thực thi phần còn lại của ứng dụng cho đến khi đăng nhập thành công.
+    """
     password = rfile("password.txt")
     if not password:
-        st.error("Chưa thiết lập file password.txt hoặc file trống.")
+        st.error("Lỗi: File `password.txt` chưa được thiết lập hoặc đang trống.")
+        st.info("Vui lòng tạo file `password.txt` và nhập mật khẩu vào đó để tiếp tục.")
         st.stop()
-    if 'is_authenticated' in st.session_state and st.session_state.is_authenticated:
+
+    # Nếu người dùng đã được xác thực trong session, cho phép truy cập.
+    if st.session_state.get("is_authenticated", False):
         return True
+
+    # Hiển thị biểu mẫu đăng nhập.
     with st.form("login_form"):
-        input_pass = st.text_input("Nhập mật khẩu để đăng nhập:", type="password")
+        st.title("🔐 Đăng nhập")
+        st.markdown("Vui lòng nhập mật khẩu để truy cập ứng dụng.")
+        input_pass = st.text_input("Mật khẩu", type="password", key="password_input")
         submitted = st.form_submit_button("Đăng nhập")
+
         if submitted:
             if input_pass == password:
                 st.session_state.is_authenticated = True
-                st.success("Đăng nhập thành công! Đang tải lại trang...")
-                st.markdown("<meta http-equiv='refresh' content='1'>", unsafe_allow_html=True)
-                st.stop()
+                # Tải lại ứng dụng để hiển thị nội dung chính sau khi đăng nhập thành công.
+                st.rerun()
             else:
-                st.error("Sai mật khẩu, thử lại!")
-                st.stop()
-        else:
-            st.stop()
+                st.error("Mật khẩu không chính xác. Vui lòng thử lại.")
+    
+    # Nếu đến đây, có nghĩa là người dùng chưa được xác thực và biểu mẫu đã được hiển thị.
+    # Dừng thực thi để không hiển thị phần còn lại của ứng dụng.
+    st.stop()
 
 def load_config_data(config_file, default_data):
+    """Tải dữ liệu cấu hình từ file, sử dụng giá trị mặc định nếu file không tồn tại hoặc thiếu dòng."""
     try:
         with open(config_file, "r", encoding="utf-8") as file:
             lines = [line.strip() for line in file if line.strip() and not line.startswith('#')]
@@ -48,6 +63,7 @@ def load_config_data(config_file, default_data):
 
 @st.cache_data(ttl=600)
 def get_all_products_as_dicts(folder_path="product_data"):
+    """Lấy tất cả thông tin sản phẩm từ các file .txt và chuyển thành danh sách các dictionary."""
     product_index = []
     if not os.path.isdir(folder_path):
         return []
@@ -69,6 +85,7 @@ def get_all_products_as_dicts(folder_path="product_data"):
     return product_index
 
 def show_chatbot():
+    """Hiển thị giao diện chatbot và xử lý logic."""
     google_api_key = None
     try:
         google_api_key = st.secrets.get("GOOGLE_API_KEY")
@@ -109,16 +126,18 @@ def show_chatbot():
         }
     )
 
-    # Lời chào lấy từ file assistant (02.assistant.txt)
+    # Khởi tạo chat nếu chưa có trong session state
     if "chat" not in st.session_state or "messages" not in st.session_state:
         assistant_greeting = rfile("system_data/02.assistant.txt") or "Em kính chào anh/chị, Em là Flowly - Trợ lý AI Agent tại ledacchien.com. Anh/chị cần tư vấn về khóa học hoặc dịch vụ nào, em sẽ hỗ trợ ngay ạ!"
-        st.session_state.chat = model.start_chat()
+        st.session_state.chat = model.start_chat(history=[])
         st.session_state.messages = [{"role": "assistant", "content": assistant_greeting}]
 
+    # Hiển thị lịch sử chat
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
+    # Xử lý input của người dùng
     if prompt := st.chat_input("Nhập nội dung trao đổi ở đây !"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -134,27 +153,32 @@ def show_chatbot():
                     st.error(f"Đã xảy ra lỗi với Gemini: {e}")
 
 def show_main_page():
+    """Hiển thị nội dung trang chính."""
     st.subheader("✨ Các bài viết nổi bật")
     default_images = ["03bai_viet/article_images/pic1.jpg", "03bai_viet/article_images/pic2.jpg", "03bai_viet/article_images/pic3.jpg"]
     default_titles = ["Tiêu đề bài viết 1", "Tiêu đề bài viết 2", "Tiêu đề bài viết 3"]
     image_paths = [path if os.path.exists(path) else f"https://placehold.co/400x267/a3e635/44403c?text=Thiếu+ảnh+{i+1}" for i, path in enumerate(default_images)]
     article_titles = load_config_data("03bai_viet/config_titles.txt", default_titles)
-    col1, col2, col3 = st.columns(3, gap="medium")
-    for i, col in enumerate([col1, col2, col3]):
+    
+    cols = st.columns(3, gap="medium")
+    for i, col in enumerate(cols):
         with col:
             st.image(image_paths[i], use_container_width=True)
             if st.button(article_titles[i], use_container_width=True, key=f"btn{i+1}"):
                 st.session_state.view = f"article_{i+1}"
                 st.rerun()
+                
     st.divider()
     if os.path.exists("system_data/logo.png"):
         logo_col1, logo_col2, logo_col3 = st.columns([1,1,1])
         with logo_col2:
             st.image("system_data/logo.png", use_container_width=True)
+            
     st.markdown(f"<h2 style='text-align: center;'>{rfile('system_data/00.xinchao.txt') or 'Chào mừng đến với Trợ lý AI'}</h2>", unsafe_allow_html=True)
     show_chatbot()
 
 def show_article_page(article_number):
+    """Hiển thị trang chi tiết bài viết."""
     if st.button("⬅️ Quay về Trang chủ"): 
         st.session_state.view = "main"
         st.rerun()
@@ -166,8 +190,13 @@ def show_article_page(article_number):
         st.error(f"Lỗi: Không tìm thấy file bài viết số {article_number}.")
 
 def main():
-    check_password()   # Yêu cầu đăng nhập pass trước khi vào app
+    """Hàm chính chạy ứng dụng."""
+    # st.set_page_config phải là lệnh Streamlit đầu tiên được gọi.
     st.set_page_config(page_title="Trợ lý AI", page_icon="🤖", layout="wide")
+    
+    # Yêu cầu đăng nhập bằng mật khẩu trước khi vào ứng dụng.
+    check_password()
+    
     with st.sidebar:
         st.title("⚙️ Tùy chọn")
         if st.button("🗑️ Xóa cuộc trò chuyện"):
@@ -178,6 +207,7 @@ def main():
         st.divider()
         st.markdown("Một sản phẩm của [Lê Đắc Chiến](https://ledacchien.com)")
 
+    # CSS tùy chỉnh
     st.markdown("""<style>
         [data-testid="stToolbar"], header, #MainMenu {visibility: hidden !important;}
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="stChatMessageContent-user"]) { justify-content: flex-end; }
@@ -206,8 +236,11 @@ def main():
             }
         }
     </style>""", unsafe_allow_html=True)
+
+    # Điều hướng trang
     if "view" not in st.session_state: 
         st.session_state.view = "main"
+        
     view_map = {
         "main": show_main_page, 
         "article_1": lambda: show_article_page(1), 
